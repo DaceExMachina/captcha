@@ -43,7 +43,11 @@ Power it from a USB power bank in a pocket. The page goes back to the checkbox a
 
 ## Run it on an old iPad (iOS 10)
 
-The page works in iOS 10 Safari, and `captcha.appcache` makes Safari keep an offline copy, so after one load at home you don't need Wi-Fi.
+The page works in iOS 10 Safari, and `captcha.appcache` makes Safari keep an offline copy, so after one load you don't need Wi-Fi.
+
+It's hosted on GitHub Pages at https://daceexmachina.github.io/captcha/. Open that on the iPad, add it to the home screen, and it picks up new versions whenever it opens with internet. Pushing to `main` publishes a new version.
+
+To serve it from the Mac instead (for example with no internet):
 
 1. **Serve the folder from the Mac** (the cache file needs its own content type):
 

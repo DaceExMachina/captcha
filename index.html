@@ -1,0 +1,428 @@
+<!doctype html>
+<html manifest="captcha.appcache">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Not a Robot</title>
+<style>
+*{box-sizing:border-box;margin:0;touch-action:manipulation} /* manipulation: no double-tap zoom */
+html,body{height:100%}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f9f9f9;font-family:Roboto,Arial,sans-serif;--w:94vw;--blue:#1a73e8;font-size:calc(var(--w)/22);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;overflow:hidden}
+/* width is the smaller of 94vw and 64vh; a media query because iOS 10 Safari has no CSS min */
+@media (min-aspect-ratio:64/94){body{--w:64vh}}
+[hidden]{display:none!important}
+button{font:inherit;cursor:pointer}
+
+/* the real widget is 304x78px with 14px text; 1em here is that 14px, scaled to the screen */
+.anchor{width:var(--w);height:5.57em;background:#f9f9f9;border:1px solid #d3d3d3;border-radius:3px;box-shadow:0 0 4px 1px rgba(0,0,0,.08);display:flex;align-items:center;padding:0 .2em 0 .86em;color:#000}
+.box{width:2em;height:2em;border:2px solid #c1c1c1;border-radius:2px;background:#fff;flex:none}
+.box.spin{border:.25em solid #4d90fe;border-left-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.label{flex:1;margin-left:.86em;font-size:1em}
+.logo{width:5em;display:flex;flex-direction:column;align-items:center;color:#555;align-self:stretch;justify-content:center}
+.logo svg{width:2.3em;height:2.3em}
+.logo b{font-size:.71em;font-weight:400;margin-top:.15em}
+.logo small{font-size:.57em}
+
+.card{width:var(--w);background:#fff;border:1px solid #ccc;box-shadow:0 2px 6px rgba(0,0,0,.2);padding:.35em}
+.head{background:var(--blue);color:#fff;padding:.7em 1em;line-height:1.3}
+.head small{font-size:.8em;display:block}
+.head b{font-size:1.6em;display:block}
+.grid{position:relative;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);grid-gap:.25em;margin:.35em 0;height:calc(var(--w) - .7em - 2px);overflow:hidden}
+.tile{display:flex;align-items:center;justify-content:center;font-size:2.6em;transition:transform .15s;position:relative;background-size:cover;background-position:center}
+.tile.sel{transform:scale(.82)}
+.tile canvas{width:100%;height:100%}
+.grid.g4{grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);grid-gap:.12em}
+.ghost{position:absolute;width:25%;height:25%;object-fit:contain;opacity:.5;pointer-events:none;transition:left 2.5s ease-in-out,top 2.5s ease-in-out,opacity 1s;animation:float 3s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-6%)}}
+.tile.sel::before{content:'\2714\FE0E';position:absolute;top:-.15em;left:-.15em;font-size:.35em;width:1.4em;height:1.4em;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center}
+.bike{position:absolute;width:33.33%;height:33.33%;display:flex;align-items:flex-end;justify-content:center;transition:left .9s ease-in}
+.bike img{width:80%;transform:scaleX(-1)} /* the cutout faces left; flip so he rides right */
+.bike.ride{animation:bump .2s 5}
+@keyframes bump{50%{transform:translateY(-8%)}}
+.pop{animation:pop .4s}
+@keyframes pop{from{opacity:0;transform:scale(.3)}}
+.foot{display:flex;align-items:center;border-top:1px solid #ddd;padding-top:.35em}
+.foot>*+*{margin-left:.5em}
+.icon{background:none;border:0;font-size:1.3em;color:#777;padding:.1em .3em}
+.verify{margin-left:auto;background:var(--blue);color:#fff;border:0;border-radius:2px;padding:.6em 1.2em;font-weight:600}
+.msg{color:#d93025;font-size:.85em;min-height:1.3em;padding:.1em .3em}
+.msg.ok{color:#188038}
+.done .grid,.done .hl{pointer-events:none}  /* round decided: nothing changes after the verdict */
+.hl{display:inline-block;position:relative;cursor:pointer;transition:transform .15s}
+.hl.sel{transform:scale(.82)}
+.hl.sel::before{content:'\2714\FE0E';position:absolute;top:-.2em;left:-.3em;font-size:.5em;width:1.4em;height:1.4em;border-radius:50%;background:#fff;color:var(--blue);display:flex;align-items:center;justify-content:center}
+
+/* QA jump bar, only with #debug on the end of the address */
+.debug{position:fixed;top:0;left:0;right:0;display:flex;flex-wrap:wrap;font-size:14px;background:#333;z-index:9}
+.debug button{flex:1 0 16%;padding:10px 4px;background:none;color:#fff;border:0;border-right:1px solid #555}
+
+.result{text-align:center;padding:1.5em 1em;height:calc(var(--w) * 1.46);display:flex;flex-direction:column;justify-content:center;align-items:center}  /* same height as a challenge */
+.result .big{font-size:9em;line-height:1.1;margin-bottom:.15em}
+.result .big img{height:1.5em}
+.result .big .box{margin:.25em auto;font-size:.22em}
+.result p{font-size:1.4em;line-height:1.4}
+.result small{display:block;color:#777;margin-top:1em}
+</style>
+</head>
+<body>
+
+<div id="check" class="anchor">
+  <div id="box" class="box"></div>
+  <div class="label">I'm not a robot</div>
+  <div class="logo">
+    <svg viewBox="0 0 64 64"><path d="M13.6 27.1A19 19 0 0 1 38.5 14.1" stroke="#1c3aa9" stroke-width="7" fill="none"/><path d="M46.0 16.9L41.4 6.2L35.6 22.1Z" fill="#1c3aa9"/><path d="M45.4 18.6A19 19 0 0 1 44.2 46.6" stroke="#4285f4" stroke-width="7" fill="none"/><path d="M38.1 51.7L49.7 53.1L38.7 40.0Z" fill="#4285f4"/><path d="M36.9 50.4A19 19 0 0 1 13.3 35.3" stroke="#ababab" stroke-width="7" fill="none"/><path d="M11.9 27.4L4.9 36.8L21.7 33.8Z" fill="#ababab"/></svg>
+    <b>reCAPTCHA</b>
+    <small>Privacy - Terms</small>
+  </div>
+</div>
+
+<div id="challenge" class="card" hidden>
+  <div class="head"><small id="ask"></small><b id="word"></b><small id="sub"></small></div>
+  <div id="grid" class="grid"></div>
+  <div id="msg" class="msg"></div>
+  <div class="foot">
+    <button class="icon" id="reload">↻</button>
+    <button class="icon" id="audio"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" style="vertical-align:-.12em"><path d="M4 16v-4a8 8 0 0 1 16 0v4"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/></svg></button>
+    <button class="icon" id="info">ⓘ</button>
+    <button class="verify" id="verify">VERIFY</button>
+  </div>
+</div>
+
+<div id="result" class="card result" hidden>
+  <div class="big" id="rbig"></div>
+  <p id="rtext"></p>
+  <small id="rhint"></small>
+</div>
+
+<script>
+// old Safari has no dev tools we can reach, so show any script error on the checkbox label
+onerror = (m, src, line) => { document.querySelector('.label').textContent = m + ' (line ' + line + ')' }
+</script>
+<script>
+// wrapped so names like grid don't clash with the globals old Safari makes for element ids
+;(() => {
+const IDLE_RESET_MS = 45000  // back to the checkbox after this long untouched
+
+const $ = s => document.querySelector(s)
+const $$ = s => document.querySelectorAll(s)
+const grid = $('#grid')
+const rand = n => Math.floor(Math.random() * n)
+const tiles = () => [...grid.querySelectorAll('.tile')]
+let order = [], round = 0, wins = 0, attempt = 0, tap = null, check = null, timers = []
+const cur = () => rounds[order[round]]
+const later = (fn, ms) => timers.push(setTimeout(fn, ms))
+const sub = t => $('#sub').textContent = t
+const msg = t => $('#msg').textContent = t
+// a tile is either a photo in img/ or an emoji
+const paint = (el, t) => {
+  const photo = t.endsWith('.jpg')
+  el.style.backgroundImage = photo ? `url(img/${t})` : ''
+  el.textContent = photo ? '' : t
+}
+// like the real thing: rounds with a "click skip" hint say SKIP until something is selected
+const skipOrVerify = () => $('#verify').textContent = cur().hint && !$$('.tile.sel').length ? 'SKIP' : 'VERIFY'
+const pop = el => { el.classList.add('pop'); later(() => el.classList.remove('pop'), 400) }
+
+const rounds = [
+  { word: 'bicycles', tiles: ['street1.jpg','hydrant1.jpg','street2.jpg','street3.jpg','street4.jpg','street5.jpg','street6.jpg','hydrant2.jpg','street7.jpg'],
+    setup: bike },
+  { word: 'traffic lights', tiles: ['bus1.jpg','escape1.jpg','meter1.jpg','walk1.jpg','bus2.jpg','escape2.jpg','moto1.jpg','meter2.jpg','chimney1.jpg'],
+    setup: dodge, tries: 2 },  // kept short on purpose: nobody should get stuck here
+  { word: 'ghosts', ask: 'Select all squares with', tiles: Array(16).fill(''), hint: 'If there are none, click skip',
+    setup: ghosts },
+  { word: 'candy', tiles: ['bus3.jpg','candy8.jpg','escape3.jpg','candy2.jpg','walk2.jpg','moto2.jpg','bus4.jpg','meter3.jpg','candy1.jpg'],
+    setup: candy },
+]
+// every run: bicycles, traffic lights, then ghosts or candy (four rounds was too long)
+const newOrder = () => [0, 1, 2 + rand(2)]
+
+function show(id) {
+  for (const s of ['check', 'challenge', 'result']) $('#' + s).hidden = s !== id
+}
+
+function reset() {
+  timers.forEach(clearTimeout); timers = []
+  order = newOrder()
+  round = wins = 0
+  $('#box').className = 'box'
+  show('check')
+}
+
+function startRound() {
+  timers.forEach(clearTimeout); timers = []
+  const r = cur()
+  $('#word').textContent = r.word
+  sub(r.hint || 'Click verify once there are none left')
+  msg('')
+  $('#msg').classList.remove('ok')
+  $('#ask').textContent = r.ask || 'Select all images with'
+  grid.classList.toggle('g4', r.tiles.length === 16)
+  grid.innerHTML = r.tiles.map((t, i) => `<div class="tile" data-i="${i}" style="background-color:#ddd"></div>`).join('')
+  tiles().forEach((el, i) => paint(el, r.tiles[i]))
+  tap = null
+  check = null  // check(attempt) -> [passed, message, over]; over = can't be won any more, so move on now
+  attempt = 0
+  $('#challenge').classList.remove('done')
+  delete $('#msg').dataset.busy
+  r.setup()
+  skipOrVerify()
+}
+
+// ---- round tricks: tap(i, el) returns false to skip the normal select toggle ----
+
+function bike() {
+  const b = document.createElement('div')
+  b.className = 'bike'
+  b.innerHTML = '<img src="img/cyclist.png" alt="">'
+  let pos = 3
+  const place = () => {
+    b.style.left = (pos > 5 ? 115 : (pos % 3) * 33.33) + '%'
+    b.style.top = '33.33%'
+  }
+  place()
+  grid.append(b)
+  b.onclick = e => {
+    e.stopPropagation()
+    if (pos > 5) return
+    tiles()[pos].classList.add('sel')  // the tap counts: the tile he leaves shows as selected
+    pos++
+    b.classList.add('ride')
+    place()
+    later(() => b.classList.remove('ride'), 1000)
+    if (pos > 5) later(() => sub('...where did it go?'), 900)
+  }
+  // the one real win in the game: select a tile, then ride him into it
+  check = n => {
+    if (pos > 5) return [false, 'The bicycle got away.', true]
+    const onHim = tiles()[pos].classList.contains('sel'), extra = $$('.tile.sel').length - onHim  // tiles picked that he isn't on
+    if (onHim && !extra) return [true, '✔\uFE0E Verified. Wait... how did you do that?']  // his tile and only his tile
+    if (extra && n < 2) return [false, ['Please select ONLY the matching images.', 'Just the one with the bicycle, please.'][n]]
+    return [false, ['Please select all matching images.', 'Hint: he’s quick. Plan ahead.', 'The bicycle wins this one.'][n]]
+  }
+}
+
+function dodge() {
+  const under = rounds[1].tiles  // the street photo each tile shows when the light isn't on it
+  let at = rand(9), dodges = 0
+  // the "one you missed" is the light in the question itself
+  $('#word').innerHTML = 'traffic lights <span class="hl">🚦</span>'
+  $('.hl').onclick = () => $('.hl').classList.toggle('sel')
+  check = n => {
+    // every light counts: the one in the question, plus the dodging one (or all nine once it gives up)
+    const onGrid = dodges < 4 ? 1 : 9 - $$('.tile.sel').length, missed = $$('.hl:not(.sel)').length + onGrid
+    if (!missed) return [true, '✔\uFE0E Verified. You found the sneaky one.']
+    // got every tile but not the one in the question: that's the joke, so it ends the round
+    if (dodges >= 4 && !onGrid) return [false, 'You missed one.', true]
+    // while the light is still hopping, the tiles really are changing, so the real reCAPTCHA line fits
+    if (n === 0 && dodges < 4) return [false, 'Please also check the new images.']
+    const line = missed === 1 ? 'You missed one.' : `You missed ${missed}.`
+    return [false, n ? line + ' We’ll let it slide.' : line]  // n = 1 is the last try here
+  }
+  paint(tiles()[at], 'light1.jpg')
+  tap = i => {
+    if (dodges >= 4 || i !== at) return true  // anything but the light selects like normal
+    tiles()[at].classList.add('sel')  // like the bicycle: the tap counts, the tile it leaves shows as ticked
+    paint(tiles()[at], under[at])
+    // hop to a tile they haven't selected, so the light never shows up already ticked
+    const free = tiles().map((t, n) => t.classList.contains('sel') || n === at ? -1 : n).filter(n => n >= 0)
+    at = free.length ? free[rand(free.length)] : (at + 1 + rand(8)) % 9
+    paint(tiles()[at], 'light1.jpg')
+    pop(tiles()[at])
+    // the header gets more fed up with each hop, so "FINE" isn't out of the blue
+    if (++dodges < 4) sub(['Whoops. One sec.', 'Hold still...', 'Get back here!'][dodges - 1])
+    else {
+      sub('FINE. All of them.')
+      tiles().forEach((t, n) => { paint(t, `light${n + 1}.jpg`); pop(t) })
+    }
+    return false
+  }
+}
+
+function ghosts() {
+  // one photo across a 4x4 grid, like reCAPTCHA's "select all squares" challenges
+  tiles().forEach((el, i) => {
+    el.style.backgroundImage = 'url(img/hallway.jpg)'
+    el.style.backgroundSize = '400% 400%'
+    el.style.backgroundPosition = `${(i % 4) * 100 / 3}% ${Math.floor(i / 4) * 100 / 3}%`
+  })
+  const g = document.createElement('img')
+  g.className = 'ghost'
+  g.src = 'img/ghost.png'
+  grid.append(g)
+  let at = -1  // the square the ghost is in
+  const flee = () => {
+    const open = tiles().map((t, i) => t.classList.contains('sel') ? -1 : i).filter(i => i >= 0)
+    const others = open.filter(i => i !== at)
+    const spots = others.length ? others : open  // last free square left: stay in it
+    g.style.opacity = spots.length ? '' : 0  // nowhere left to hide: fade out
+    if (!spots.length) return
+    at = spots[rand(spots.length)]
+    g.style.left = (at % 4) * 25 + '%'
+    g.style.top = Math.floor(at / 4) * 25 + '%'
+  }
+  const drift = () => { flee(); later(drift, 3500) }
+  drift()
+  tap = (i, el) => {
+    el.classList.toggle('sel')
+    if (i === at) flee()
+    return false
+  }
+  const skipped = ['There is literally a ghost right there.', 'Seriously, it’s right there. Try boxing it in.', 'Fine. The ghost wins.']
+  const moved = ['Please try again. It moved.', 'Sorry. Maybe try boxing it in?', 'Fine. The ghost wins.']
+  check = n => tiles().every(t => t.classList.contains('sel'))
+    ? [true, '✔\uFE0E Verified. The ghost has nowhere left to hide.']
+    : [false, ($$('.tile.sel').length ? moved : skipped)[n]]
+}
+
+function candy() {
+  let bites = 0
+  const candies = tiles().filter((el, i) => cur().tiles[i].startsWith('candy'))  // only a few tiles are candy
+  candies.forEach(el => {
+    const c = document.createElement('canvas')
+    c.width = c.height = 240
+    const img = new Image()
+    img.onload = () => { c.getContext('2d').drawImage(img, 0, 0, 240, 240); el.ready = true }  // not biteable until drawn
+    el.sides = [0, 1, 2, 3].sort(() => Math.random() - 0.5)  // each bite comes from a different side
+    el.bites = 0
+    img.src = 'img/' + cur().tiles[+el.dataset.i]
+    el.style.backgroundImage = ''
+    el.style.backgroundColor = 'transparent'
+    el.append(c)
+  })
+  // the header says "click verify once there are none left", so eating them all is the win
+  check = n => {
+    const left = candies.filter(el => el.bites < BITES).length
+    const wrong = $$('.tile.sel').length  // candy tiles can't be selected, only eaten, so any selection is a wrong pick
+    if (!left && !wrong) return [true, '✔\uFE0E Verified. There are none left.']
+    if (wrong && n < 2) return [false, 'Please select ONLY candy.']
+    if (!left) return [false, 'Fine. You ate it all anyway.']  // last try, all eaten, but a wrong pick
+    return [false, (bites ? ['There’s still candy left.', 'Finish your candy.', 'Fine. Keep the candy.']
+      : ['Please select all images with candy.', 'Hint: there should be none left.', 'Fine. Keep the candy.'])[n]]
+  }
+  tap = (i, el) => {
+    if (!el.sides) return true  // not candy: selects like normal
+    if (!el.ready || el.bites === BITES) return false
+    bite(el.firstChild.getContext('2d'), ++el.bites, el.sides)
+    bites++
+    sub(bites === 1 ? 'Hey.' : bites < 5 ? 'Stop eating them.' : bites < 8 ? 'Seriously??' : 'Unbelievable.')  // 9 bites in all
+    return false
+  }
+}
+
+// erase a toothy bite from the photo: bites 1-2 chomp in from different sides, bigger and
+// deeper each time, and the 3rd finishes it
+const BITES = 3
+function bite(ctx, n, sides) {
+  if (n === BITES) return ctx.clearRect(0, 0, 240, 240)
+  const t = 70 + rand(100), inset = -40 + (n - 1) * 15, r = 120 + (n - 1) * 20  // inset < 0: the centre sits outside the tile, so it bites in from the edge
+  const [x, y] = [[t, inset], [240 - inset, t], [t, 240 - inset], [inset, t]][sides[n - 1]]
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill()
+  for (let a = 0; a < 2 * Math.PI; a += 0.22) {  // tooth marks around the rim
+    ctx.beginPath(); ctx.arc(x + r * Math.cos(a), y + r * Math.sin(a), 13, 0, 2 * Math.PI); ctx.fill()
+  }
+}
+
+// ---- final verdict ----
+
+const checks = ['Checking pulse...', 'Counting fingers...', 'Sniffing for candy...', 'Consulting the ghosts...', 'Asking your mom...']
+const verdicts = [
+  ['✅', 'Verified: 100% human.<br>Have a spooky night.'],
+  ['<img src="img/skeleton.png" alt="">', 'You are 62% skeleton.<br>Close enough.'],
+  ['<img src="img/robot.png" alt="">', 'Robot detected. Beep boop.<br>We’ll allow it.'],
+  ['🎃', 'Result: pumpkin.<br>We have no further questions.'],
+  ['<img src="img/dracula.png" alt="">', 'Human, technically.<br>Please do not bite anyone.'],
+]
+
+function verdict(pick) {  // pick: force one verdict (debug bar)
+  show('result')
+  $('#result').onclick = null
+  $('#rbig').innerHTML = '<div class="box spin"></div>'  // the same spinner as the checkbox
+  $('#rhint').textContent = ''
+  checks.forEach((c, i) => later(() => $('#rtext').textContent = c, i * 800))
+  later(() => {
+    const [big, text] = pick || verdicts[rand(verdicts.length)]
+    $('#rbig').innerHTML = big
+    $('#rtext').innerHTML = text
+    $('#rhint').textContent = 'Tap to verify again'
+    $('#result').onclick = reset
+  }, checks.length * 800)
+}
+
+// ---- wiring ----
+
+const scream = new Audio('scream.mp3')  // the Wilhelm scream with the reverb baked in (iOS 10 can't do live effects easily)
+
+$('#check').onclick = () => {
+  if ($('#box').className !== 'box') return
+  scream.load()  // iOS only fetches audio after a tap, so get it ready before anyone hits the headphones
+  $('#box').className = 'box spin'
+  later(() => { show('challenge'); startRound() }, 1300)
+}
+
+grid.onclick = e => {
+  const el = e.target.closest('.tile')
+  if (!el) return
+  if (!tap || tap(+el.dataset.i, el) !== false) el.classList.toggle('sel')
+  skipOrVerify()
+}
+
+$('#verify').onclick = () => {
+  if ($('#msg').dataset.busy) return
+  $('#msg').dataset.busy = 1
+  // every round: a few attempts (3 unless it says otherwise), each with its own line; the last one concedes
+  const [ok, text, over] = check(attempt)
+  $('#msg').classList.toggle('ok', ok)
+  msg(text)
+  if (!ok && !over && ++attempt < (cur().tries || 3)) return later(() => delete $('#msg').dataset.busy, 800)
+  if (ok) wins++
+  $('#challenge').classList.add('done')
+  // beat both of the first two rounds and you've earned it: skip the third
+  later(() => ++round < order.length && !(round === 2 && wins === 2) ? startRound() : verdict(), 1800)
+}
+$('#reload').onclick = reset  // back to the checkbox, not just this round
+$('#audio').onclick = () => { msg('Audio challenge: *distant screaming*'); scream.currentTime = 0; scream.play() }
+$('#info').onclick = () => msg('You are doing great. Probably.')
+
+// iOS ignores user-scalable=no in Safari, so block pinch zoom directly
+document.addEventListener('gesturestart', e => e.preventDefault())
+// handle every tap ourselves: iOS (home screen apps especially) waits to see if two quick taps are a
+// double-tap and drops the second. Cancelling touchstart stops that (and iOS's own late click); the click
+// fires on touchend, because iOS only lets audio start from a finger lift, not a touch-down.
+document.addEventListener('touchstart', e => e.preventDefault(), { passive: false })
+document.addEventListener('touchend', e => {
+  e.preventDefault()
+  Array.from(e.changedTouches).forEach(t => t.target.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+}, { passive: false })
+
+let idle
+// touchstart and mousedown, since iOS 10 has no pointer events
+const nudge = () => { clearTimeout(idle); idle = setTimeout(reset, IDLE_RESET_MS) }
+addEventListener('touchstart', nudge)
+addEventListener('mousedown', nudge)
+// QA: open the page with #debug on the end to get a bar that jumps straight to any step
+if (location.hash === '#debug') {
+  const nav = document.createElement('div')
+  nav.className = 'debug'
+  nav.innerHTML = ['start', ...rounds.map(r => r.word), ...verdicts.map(v => v[0].includes('<img') ? v[0].match(/img\/(\w+)/)[1] : v[0])].map(t => `<button>${t}</button>`).join('')
+  nav.onclick = e => {
+    const n = Array.from(nav.children).indexOf(e.target.closest('button'))  // old Safari can't spread .children
+    if (n < 0) return
+    reset()
+    if (n > rounds.length) return verdict(verdicts[n - rounds.length - 1])
+    if (!n) return
+    if (n > 2) order[2] = n - 1  // ghosts or candy: make that the last round
+    round = Math.min(n - 1, 2); show('challenge'); startRound()
+  }
+  document.body.append(nav)
+}
+// a home screen app keeps its offline copy until it notices a new one; swap it in right away
+if (window.applicationCache) applicationCache.addEventListener('updateready', () => location.reload())
+reset()
+})()
+</script>
+</body>
+</html>

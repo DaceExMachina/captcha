@@ -192,7 +192,7 @@ function bike() {
     b.classList.add('ride')
     place()
     later(() => b.classList.remove('ride'), 1000)
-    if (pos > 5) later(() => sub('...where did it go?'), 900)
+    if (pos > 5) later(() => { sub('...where did it go?'); conclude(false, 'The bicycle got away.', 2500) }, 900)  // no VERIFY needed
   }
   // the one real win in the game: select a tile, then ride him into it
   check = n => {
@@ -214,8 +214,8 @@ function dodge() {
     // every light counts: the one in the question, plus the dodging one (or all nine once it gives up)
     const onGrid = dodges < 4 ? 1 : 9 - $$('.tile.sel').length, missed = $$('.hl:not(.sel)').length + onGrid
     if (!missed) return [true, '✔\uFE0E Verified. You found the sneaky one.']
-    // got every tile but not the one in the question: that's the joke, so it ends the round
-    if (dodges >= 4 && !onGrid) return [false, 'You missed one.', true]
+    // got every tile but not the one in the question: that's the joke, so give them a shot at spotting it
+    if (dodges >= 4 && !onGrid) return [false, n ? 'You missed one. It was right there 👆' : 'You missed one.']
     // while the light is still hopping, the tiles really are changing, so the real reCAPTCHA line fits
     if (n === 0 && dodges < 4) return [false, 'Please also check the new images.']
     const line = missed === 1 ? 'You missed one.' : `You missed ${missed}.`
@@ -370,18 +370,27 @@ grid.onclick = e => {
   skipOrVerify()
 }
 
-$('#verify').onclick = () => {
-  if ($('#msg').dataset.busy) return
+// end the round once (VERIFY and the bicycle leaving can both try): show the result, then move on
+function conclude(ok, text, ms = 1800) {
+  if ($('#challenge').classList.contains('done')) return
+  $('#challenge').classList.add('done')
   $('#msg').dataset.busy = 1
-  // every round: a few attempts (3 unless it says otherwise), each with its own line; the last one concedes
-  const [ok, text, over] = check(attempt)
   $('#msg').classList.toggle('ok', ok)
   msg(text)
-  if (!ok && !over && ++attempt < (cur().tries || 3)) return later(() => delete $('#msg').dataset.busy, 800)
   if (ok) wins++
-  $('#challenge').classList.add('done')
   // beat both of the first two rounds and you've earned it: skip the third
-  later(() => ++round < order.length && !(round === 2 && wins === 2) ? startRound() : verdict(), 1800)
+  later(() => ++round < order.length && !(round === 2 && wins === 2) ? startRound() : verdict(), ms)
+}
+
+$('#verify').onclick = () => {
+  if ($('#msg').dataset.busy) return
+  // every round: a few attempts (3 unless it says otherwise), each with its own line; the last one concedes
+  const [ok, text, over] = check(attempt)
+  if (ok || over || ++attempt >= (cur().tries || 3)) return conclude(ok, text)
+  $('#msg').dataset.busy = 1
+  $('#msg').classList.remove('ok')
+  msg(text)
+  later(() => delete $('#msg').dataset.busy, 800)
 }
 $('#reload').onclick = reset  // back to the checkbox, not just this round
 $('#audio').onclick = () => { msg('Audio challenge: *distant screaming*'); scream.currentTime = 0; scream.play() }
